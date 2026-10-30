@@ -1,0 +1,1 @@
+# lirik-solar-automation
