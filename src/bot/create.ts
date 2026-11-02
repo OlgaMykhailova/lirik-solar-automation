@@ -59,23 +59,21 @@ export function createBot({ token, allowedIds, sessions, counters }: Deps): Bot 
   // і може зупинити функцію до закінчення генерації документа.
   const bot = new Bot(token, { client: { canUseWebhookReply: () => false } });
 
-  bot.catch(async (err) => {
-    console.error("Помилка обробки оновлення:", err.error);
-    try {
-      await err.ctx.reply("Сталася помилка. Спробуйте ще раз: /start");
-    } catch {
-      // нічого: користувач міг заблокувати бота
-    }
-  });
-
+  // bot.catch у grammY працює лише для long polling; на вебхуці помилка інакше дала б 500 і ретраї від Telegram
   bot.use(async (ctx, next) => {
-    const id = ctx.from?.id;
-    if (!id || !allowedIds.includes(id)) {
-      if (ctx.chat) await ctx.reply("Доступ закрито.");
-      return;
+    try {
+      const id = ctx.from?.id;
+      if (!id || !allowedIds.includes(id)) {
+        if (ctx.chat) await ctx.reply("Доступ закрито.").catch(() => undefined);
+        return;
+      }
+      if (await sessions.seenUpdate(ctx.update.update_id)) return;
+      await next();
+    } catch (err) {
+      console.error("Помилка обробки оновлення:", err);
+      const reason = err instanceof Error ? err.message : String(err);
+      await ctx.reply(`Сталася помилка: ${reason.slice(0, 200)}\nСпробуйте ще раз: /start`).catch(() => undefined);
     }
-    if (await sessions.seenUpdate(ctx.update.update_id)) return;
-    await next();
   });
 
   const start = async (ctx: Context) => {

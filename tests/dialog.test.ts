@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createBot } from "../src/bot/create.js";
 import type { Session, SessionStore } from "../src/bot/session.js";
-import { MemoryCounterStore } from "../src/data/counters.js";
+import { MemoryCounterStore, type CounterStore } from "../src/data/counters.js";
 
 class MemorySessions implements SessionStore {
   m = new Map<number, Session>();
@@ -12,9 +12,9 @@ class MemorySessions implements SessionStore {
   async seenUpdate(id: number) { const r = this.seen.has(id); this.seen.add(id); return r; }
 }
 
-async function setup() {
+async function setup(counters: CounterStore = new MemoryCounterStore()) {
   const calls: { method: string; payload: any }[] = [];
-  const bot = createBot({ token: "123:abc", allowedIds: [1], sessions: new MemorySessions(), counters: new MemoryCounterStore() });
+  const bot = createBot({ token: "123:abc", allowedIds: [1], sessions: new MemorySessions(), counters });
   bot.api.config.use(async (_prev, method, payload) => {
     calls.push({ method, payload });
     if (method === "getMe") return { ok: true, result: { id: 9, is_bot: true, first_name: "b", username: "b" } } as any;
@@ -88,6 +88,14 @@ describe("діалог бота", () => {
     const h = await setup();
     // clientConfig приватна в типах grammY, але саме вона вирішує, чи йде перший API-виклик як відповідь на вебхук
     expect((h.bot as any).clientConfig.canUseWebhookReply("answerCallbackQuery")).toBe(false);
+  });
+
+  it("при збої не кидає помилку (інакше вебхук дає 500), а відповідає в чат", async () => {
+    const h = await setup({ next: async () => { throw new Error("redis недоступний"); } });
+    await expect(makeDoc(h, "invoice", "drizhenko")).resolves.toBeUndefined();
+    const msgs = h.calls.filter((c) => c.method === "sendMessage").map((c) => c.payload.text as string);
+    expect(msgs.some((m) => m.startsWith("Сталася помилка: redis недоступний"))).toBe(true);
+    expect(h.calls.some((c) => c.method === "sendDocument")).toBe(false);
   });
 
   it("не пускає сторонніх", async () => {
