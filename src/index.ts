@@ -2,6 +2,9 @@ import { webhookCallback } from "grammy";
 import { createBot, parseAllowedIds } from "./bot/create.js";
 import { RedisSessionStore, createRedis } from "./bot/session.js";
 import { RedisCounterStore } from "./data/counters.js";
+import { FOPS } from "./data/fop.js";
+import { generateWaybill } from "./generators/waybill.js";
+import { priceItems } from "./utils/money.js";
 
 let handler: ((req: Request) => Promise<Response>) | undefined;
 
@@ -19,6 +22,33 @@ function getHandler() {
   });
   handler = webhookCallback(bot, "std/http", { secretToken: secret, timeoutMilliseconds: 25_000 });
   return handler;
+}
+
+async function diagnoseReal(): Promise<Response> {
+  const token = process.env.BOT_TOKEN!;
+  const chatId = parseAllowedIds(process.env.ALLOWED_USER_IDS)[0];
+  if (!chatId) return Response.json({ error: "ALLOWED_USER_IDS порожній" });
+  const items = priceItems([{ name: "ТЕСТ (діагностика, ігноруйте)", qty: 1, priceUsd: "1" }], "1");
+  const file = await generateWaybill({ fop: FOPS.neskhodovskyi, number: "тест", date: new Date(), items });
+  const form = new FormData();
+  form.set("chat_id", String(chatId));
+  form.set("caption", "Тестовий файл діагностики, ігноруйте");
+  form.set("document", new Blob([new Uint8Array(file)]), "test.docx");
+  const packed = new Response(form);
+  const ct = packed.headers.get("content-type") ?? "";
+  const body = Buffer.from(await packed.arrayBuffer());
+  const t = Date.now();
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+      method: "POST",
+      headers: { "content-type": ct, "content-length": String(body.length) },
+      body,
+      signal: AbortSignal.timeout(40_000),
+    });
+    return Response.json({ bytes: body.length, ms: Date.now() - t, http: res.status, ok: res.ok });
+  } catch (e) {
+    return Response.json({ bytes: body.length, ms: Date.now() - t, error: e instanceof Error ? e.name : String(e) });
+  }
 }
 
 async function diagnose(): Promise<Response> {
@@ -50,7 +80,9 @@ async function diagnose(): Promise<Response> {
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    if (request.method === "GET" && url.searchParams.get("diag") === process.env.WEBHOOK_SECRET) return diagnose();
+    if (request.method === "GET" && url.searchParams.get("diag") === process.env.WEBHOOK_SECRET) {
+      return url.searchParams.get("real") === "1" ? diagnoseReal() : diagnose();
+    }
     if (request.method !== "POST") return new Response("ok");
     return getHandler()(request);
   },
