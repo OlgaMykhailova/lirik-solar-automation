@@ -1,7 +1,7 @@
 import { webhookCallback } from "grammy";
-import { createBot, parseAllowedIds } from "../src/bot/create.js";
-import { RedisSessionStore, createRedis } from "../src/bot/session.js";
-import { RedisCounterStore } from "../src/data/counters.js";
+import { createBot, parseAllowedIds } from "./bot/create.js";
+import { RedisSessionStore, createRedis } from "./bot/session.js";
+import { RedisCounterStore } from "./data/counters.js";
 
 let handler: ((req: Request) => Promise<Response>) | undefined;
 
