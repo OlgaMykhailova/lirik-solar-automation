@@ -51,7 +51,7 @@ export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     origin = url.origin;
-    if (request.method === "GET" && url.pathname.startsWith("/f/")) return serveFile(url.pathname);
+    if ((request.method === "GET" || request.method === "HEAD") && url.pathname.startsWith("/f/")) return serveFile(url.pathname);
     if (request.method !== "POST") return new Response("ok");
     return getApp().handler(request);
   },

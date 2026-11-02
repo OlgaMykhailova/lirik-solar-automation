@@ -134,7 +134,7 @@ export function createBot({ token, allowedIds, sessions, counters, sendDocument 
     const number = await nextDocNumber(counters, s.fopId, s.docType, date);
     const data: DocData = { fop, number, date, items: priceItems(s.items, s.rate) };
     const buffer = s.docType === "invoice" ? await generateInvoice(data) : await generateWaybill(data);
-    const filename = `${s.docType === "invoice" ? "Рахунок на оплату" : "Видаткова накладна"} ${number} ${fop.signature}.docx`;
+    const filename = `${s.docType === "invoice" ? "Рахунок на оплату" : "Видаткова накладна"} ${number} ${fop.signature.replace(/\.+$/, "")}.docx`;
     await sendDocument(ctx.chat?.id ?? ctx.from.id, buffer, filename, `№ ${number}`);
     await ctx.reply("Готово. Що далі?", { reply_markup: mainMenu() });
   });
