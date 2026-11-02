@@ -24,7 +24,9 @@ const TIMEOUT_MS = 15_000;
 
 export function parseServiceAccount(raw: string): ServiceAccount {
   let text = raw.trim();
-  if (text.startsWith("'") && text.endsWith("'")) text = text.slice(1, -1);
+  if (text.startsWith("'") && text.endsWith("'")) text = text.slice(1, -1).trim();
+  // якщо вставили вміст без зовнішніх фігурних дужок
+  if (!text.startsWith("{")) text = `{${text.replace(/,\s*$/, "")}}`;
   let data: Partial<ServiceAccount>;
   try {
     data = JSON.parse(text) as Partial<ServiceAccount>;
@@ -35,6 +37,19 @@ export function parseServiceAccount(raw: string): ServiceAccount {
   }
   if (!data.client_email || !data.private_key) throw new Error("У GOOGLE_SERVICE_ACCOUNT_JSON немає client_email або private_key");
   return { client_email: data.client_email, private_key: data.private_key };
+}
+
+async function step<T>(stage: string, run: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  try {
+    return await run();
+  } catch (err) {
+    const sec = Math.round((Date.now() - started) / 1000);
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new Error(`${stage}: немає відповіді від Google за ${sec} с`);
+    }
+    throw new Error(`${stage}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 const b64url = (v: Buffer | string) => Buffer.from(v).toString("base64url");
@@ -55,16 +70,17 @@ export class GoogleDrive {
 
   private async accessToken(): Promise<string> {
     if (this.token && this.token.expiresAt > Date.now() + 60_000) return this.token.value;
-    const res = await fetch(TOKEN_URL, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        assertion: signJwt(this.cfg.account, Math.floor(Date.now() / 1000)),
-      }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+    const assertion = signJwt(this.cfg.account, Math.floor(Date.now() / 1000));
+    const { res, data } = await step("вхід у Google (токен)", async () => {
+      const res = await fetch(TOKEN_URL, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      const data = (await res.json()) as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+      return { res, data };
     });
-    const data = (await res.json()) as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
     if (!res.ok || !data.access_token) throw new Error(`Google OAuth: ${data.error ?? res.status} ${data.error_description ?? ""}`.trim());
     this.token = { value: data.access_token, expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000 };
     return this.token.value;
@@ -77,17 +93,17 @@ export class GoogleDrive {
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${DOCX_MIME}\r\n\r\n`,
     );
     const body = Buffer.concat([head, file, Buffer.from(`\r\n--${boundary}--`)]);
-    const res = await fetch(`${API}/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${await this.accessToken()}`,
-        "content-type": `multipart/related; boundary=${boundary}`,
-      },
-      body,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+    const authorization = `Bearer ${await this.accessToken()}`;
+    const { id, webViewLink } = await step("завантаження файлу на Диск", async () => {
+      const res = await fetch(`${API}/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink`, {
+        method: "POST",
+        headers: { authorization, "content-type": `multipart/related; boundary=${boundary}` },
+        body,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`відповідь ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      return (await res.json()) as { id: string; webViewLink?: string };
     });
-    if (!res.ok) throw new Error(`Drive завантаження ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    const { id, webViewLink } = (await res.json()) as { id: string; webViewLink?: string };
     return {
       id,
       viewUrl: webViewLink ?? `https://drive.google.com/file/d/${id}/view`,

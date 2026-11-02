@@ -11,8 +11,9 @@ export function createDriveDocumentSender(token: string, drive: GoogleDrive, fal
     try {
       uploaded = await drive.uploadDocument(file, filename);
     } catch (err) {
-      console.error("Google Диск недоступний, використовую запасну доставку:", err instanceof Error ? err.message : err);
-      return fallback(chatId, file, filename, caption);
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error("Google Диск недоступний, використовую запасну доставку:", reason);
+      return fallback(chatId, file, filename, `${caption}\nGoogle Диск не спрацював: ${reason.slice(0, 250)}`);
     }
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",

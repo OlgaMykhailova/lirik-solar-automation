@@ -54,6 +54,12 @@ describe("сервісний акаунт", () => {
     expect(parseServiceAccount(`'${JSON.stringify(account)}'`)).toEqual(account);
   });
 
+  it("терпить вміст без зовнішніх фігурних дужок", () => {
+    const inner = JSON.stringify(account).slice(1, -1);
+    expect(parseServiceAccount(inner)).toEqual(account);
+    expect(parseServiceAccount(`${inner},`)).toEqual(account);
+  });
+
   it("парсить JSON-ключ і відхиляє неповний", () => {
     expect(parseServiceAccount(JSON.stringify({ ...account, extra: 1 }))).toEqual(account);
     expect(() => parseServiceAccount("{}")).toThrow(/client_email/);
@@ -83,7 +89,17 @@ describe("GoogleDrive", () => {
 
   it("повідомляє про відмову Диска (наприклад, немає доступу до папки)", async () => {
     stub((c) => (c.url.includes("oauth2") ? happy(c) : { status: 404, text: "File not found: FOLDER1" }));
-    await expect(new GoogleDrive(cfg).uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/404/);
+    await expect(new GoogleDrive(cfg).uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/відповідь 404/);
+  });
+
+  it("називає крок, на якому Google не відповів", async () => {
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (url.includes("oauth2")) return { ok: true, status: 200, json: async () => ({ access_token: "AT" }), text: async () => "" };
+      throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    });
+    await expect(new GoogleDrive(cfg).uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/завантаження файлу на Диск: немає відповіді від Google за \d+ с/);
+    vi.stubGlobal("fetch", async () => { throw Object.assign(new Error("t"), { name: "TimeoutError" }); });
+    await expect(new GoogleDrive(cfg).uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/вхід у Google \(токен\): немає відповіді/);
   });
 
   it("повідомляє про помилку входу", async () => {
@@ -109,6 +125,6 @@ describe("відправник через Диск", () => {
     const fallback = vi.fn(async () => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     await createDriveDocumentSender("T", new GoogleDrive(cfg), fallback)(42, Buffer.from("x"), "a.docx", "№ 1");
-    expect(fallback).toHaveBeenCalledWith(42, expect.any(Buffer), "a.docx", "№ 1");
+    expect(fallback).toHaveBeenCalledWith(42, expect.any(Buffer), "a.docx", expect.stringMatching(/^№ 1\nGoogle Диск не спрацював: .*invalid_grant/));
   });
 });
