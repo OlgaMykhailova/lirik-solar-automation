@@ -31,12 +31,12 @@ function getApp(): App {
   return app;
 }
 
-async function serveFile(path: string): Promise<Response> {
-  const [, , id, name = "document.docx"] = path.split("/");
+async function serveFile(url: URL): Promise<Response> {
+  const [, , id] = url.pathname.split("/");
   if (!id || !/^[0-9a-f]{32}$/.test(id)) return new Response("not found", { status: 404 });
   const file = await getApp().files.get(id);
   if (!file) return new Response("not found", { status: 404 });
-  const filename = decodeURIComponent(name);
+  const filename = (url.searchParams.get("n") ?? "document.docx").replace(/[\r\n"\\/]/g, "_");
   return new Response(new Uint8Array(file), {
     headers: {
       "content-type": DOCX_MIME,
@@ -51,7 +51,7 @@ export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     origin = url.origin;
-    if ((request.method === "GET" || request.method === "HEAD") && url.pathname.startsWith("/f/")) return serveFile(url.pathname);
+    if ((request.method === "GET" || request.method === "HEAD") && url.pathname.startsWith("/f/")) return serveFile(url);
     if (request.method !== "POST") return new Response("ok");
     return getApp().handler(request);
   },

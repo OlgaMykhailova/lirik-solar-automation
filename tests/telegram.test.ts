@@ -24,8 +24,9 @@ describe("відправка документа за посиланням", () =
     expect(calls[0]!.url).toBe("https://api.telegram.org/botT/sendDocument");
     const url = new URL(calls[0]!.body.document);
     expect(url.origin).toBe("https://app.example");
-    const [, , id, name] = url.pathname.split("/");
-    expect(decodeURIComponent(name!)).toBe("Рахунок 06-02-10.docx");
+    const [, , id, last] = url.pathname.split("/");
+    expect(last).toBe("document.zip");
+    expect(url.searchParams.get("n")).toBe("Рахунок 06-02-10.docx");
     expect(await store.get(id!)).toEqual(file);
     expect(calls[0]!.body).toMatchObject({ chat_id: 42, caption: "№ 06-02-10" });
   });
@@ -38,6 +39,6 @@ describe("відправка документа за посиланням", () =
   });
 
   it("fileUrl кодує назву файлу", () => {
-    expect(fileUrl("https://a", "id", "a b.docx")).toBe("https://a/f/id/a%20b.docx");
+    expect(fileUrl("https://a", "id", "a b.docx")).toBe("https://a/f/id/document.zip?n=a%20b.docx");
   });
 });

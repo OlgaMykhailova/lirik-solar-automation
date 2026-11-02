@@ -10,8 +10,10 @@ export interface FileStore {
 export const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const SEND_TIMEOUT_MS = 15_000;
 
+// Telegram за URL приймає лише GIF/PDF/ZIP і визначає тип за розширенням у шляху,
+// тому шлях закінчується на .zip, а справжню назву передаємо в ?n= для Content-Disposition.
 export function fileUrl(baseUrl: string, id: string, filename: string): string {
-  return `${baseUrl}/f/${id}/${encodeURIComponent(filename)}`;
+  return `${baseUrl}/f/${id}/document.zip?n=${encodeURIComponent(filename)}`;
 }
 
 async function callTelegram(token: string, method: string, payload: object): Promise<void> {
