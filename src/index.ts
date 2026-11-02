@@ -3,6 +3,8 @@ import { createBot, parseAllowedIds } from "./bot/create.js";
 import { RedisFileStore } from "./bot/files.js";
 import { RedisSessionStore, createRedis } from "./bot/session.js";
 import { DOCX_MIME, createUrlDocumentSender } from "./bot/telegram.js";
+import { GoogleDrive, parseServiceAccount } from "./drive/google.js";
+import { createDriveDocumentSender } from "./drive/sender.js";
 import { RedisCounterStore } from "./data/counters.js";
 
 interface App {
@@ -20,12 +22,18 @@ function getApp(): App {
   if (!token || !secret) throw new Error("Не задано BOT_TOKEN або WEBHOOK_SECRET");
   const redis = createRedis();
   const files = new RedisFileStore(redis);
+  const urlSender = createUrlDocumentSender(token, files, () => origin);
+  const { GOOGLE_SERVICE_ACCOUNT_JSON: accountJson, GOOGLE_DRIVE_FOLDER_ID: folderId } = process.env;
+  const sendDocument =
+    accountJson && folderId
+      ? createDriveDocumentSender(token, new GoogleDrive({ account: parseServiceAccount(accountJson), folderId }), urlSender)
+      : urlSender;
   const bot = createBot({
     token,
     allowedIds: parseAllowedIds(process.env.ALLOWED_USER_IDS),
     sessions: new RedisSessionStore(redis),
     counters: new RedisCounterStore(redis),
-    sendDocument: createUrlDocumentSender(token, files, () => origin),
+    sendDocument,
   });
   app = { handler: webhookCallback(bot, "std/http", { secretToken: secret, timeoutMilliseconds: 25_000 }), files };
   return app;
