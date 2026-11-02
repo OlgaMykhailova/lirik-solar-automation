@@ -21,7 +21,7 @@ const fopMenu = () =>
     .text("Скасувати", "cancel");
 const cancelOnly = () => new InlineKeyboard().text("Скасувати", "cancel");
 const moreMenu = () =>
-  new InlineKeyboard().text("+ Додати товар", "more:add").text("Далі", "more:next").row().text("Скасувати", "cancel");
+  new InlineKeyboard().text("Додати ще товар", "more:add").row().text("Всі товари введені", "more:next").row().text("Скасувати", "cancel");
 const confirmMenu = () => new InlineKeyboard().text("Згенерувати", "gen").text("Скасувати", "cancel");
 
 export interface Deps {

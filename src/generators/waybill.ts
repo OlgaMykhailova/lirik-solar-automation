@@ -1,4 +1,4 @@
-import { AlignmentType, BorderStyle, Document, Packer, Paragraph, TableRow, type Table } from "docx";
+import { AlignmentType, Document, Packer, TableRow, type Paragraph, type Table } from "docx";
 import { CUSTOMER, PLACE } from "../data/fop.js";
 import type { DocData } from "../types.js";
 import { formatKop, totalKop } from "../utils/money.js";
@@ -45,13 +45,6 @@ function block(data: DocData): (Paragraph | Table)[] {
 }
 
 export async function generateWaybill(data: DocData): Promise<Buffer> {
-  const separator = new Paragraph({
-    children: [],
-    spacing: { before: 200, after: 200 },
-    border: { bottom: { style: BorderStyle.DASHED, size: 6, color: "808080", space: 1 } },
-  });
-  const doc = new Document({
-    sections: [{ properties: { page: PAGE }, children: [...block(data), separator, ...block(data)] }],
-  });
+  const doc = new Document({ sections: [{ properties: { page: PAGE }, children: block(data) }] });
   return Packer.toBuffer(doc);
 }
