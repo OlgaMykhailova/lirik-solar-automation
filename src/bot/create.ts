@@ -7,7 +7,7 @@ import { generateWaybill } from "../generators/waybill.js";
 import type { DocData, DocType, FopId } from "../types.js";
 import { formatKop, parseQty, priceInKop, priceItems, totalKop } from "../utils/money.js";
 import type { Session, SessionStore } from "./session.js";
-import { createDocumentSender, type SendDocument } from "./telegram.js";
+import type { SendDocument } from "./telegram.js";
 
 const DOC_LABEL: Record<DocType, string> = { invoice: "рахунок", waybill: "накладну" };
 
@@ -30,7 +30,7 @@ export interface Deps {
   allowedIds: number[];
   sessions: SessionStore;
   counters: CounterStore;
-  sendDocument?: SendDocument;
+  sendDocument: SendDocument;
 }
 
 export function parseAllowedIds(raw: string | undefined): number[] {
@@ -56,7 +56,7 @@ function summary(s: Session): string {
   ].join("\n");
 }
 
-export function createBot({ token, allowedIds, sessions, counters, sendDocument = createDocumentSender(token) }: Deps): Bot {
+export function createBot({ token, allowedIds, sessions, counters, sendDocument }: Deps): Bot {
   // Без цього перший API-виклик іде як відповідь на вебхук, Vercel завершує запит
   // і може зупинити функцію до закінчення генерації документа.
   const bot = new Bot(token, { client: { canUseWebhookReply: () => false } });
