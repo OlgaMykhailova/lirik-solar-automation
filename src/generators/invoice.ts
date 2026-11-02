@@ -31,7 +31,7 @@ export async function generateInvoice(data: DocData): Promise<Buffer> {
     }),
   ]);
 
-  const w = scaleWidths([4, 38, 13, 11, 17, 17]);
+  const w = scaleWidths([4, 35, 13, 13, 17, 18]);
   const head = ["№", "Товар", "Кількість, шт", "Од.виміру", "Ціна без ПДВ, грн", "Сума без ПДВ, грн"];
   const rows = [
     new TableRow({ tableHeader: true, children: head.map((h, i) => cell(h, w[i]!, 20, { bold: true, align: AlignmentType.CENTER })) }),
@@ -62,7 +62,7 @@ export async function generateInvoice(data: DocData): Promise<Buffer> {
           para([run("Виконавець: ", 22, true), run(fopLine, 22)]),
           para(`Ідентифікаційний номер ${fop.taxId}${phone}`, { size: 22 }),
           para(`п/р ${fop.iban} у банку ${fop.bank}`, { size: 22 }),
-          para([run("Замовник: ", 22, true), run(CUSTOMER, 22)], { after: 160 }),
+          para([run("Замовник: ", 22, true), run(CUSTOMER, 22)], { after: 360 }),
           table(w, rows),
           para([run(`Всього, без ПДВ: ${totalText}`, 22, true)], { align: AlignmentType.RIGHT, before: 120 }),
           para(`Всього найменувань ${items.length} шт, на ${totalText} грн.`, { size: 22, before: 120, after: 0 }),

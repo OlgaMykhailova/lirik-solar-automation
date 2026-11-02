@@ -1,9 +1,9 @@
-import { AlignmentType, Document, Packer, TableRow, type Paragraph, type Table } from "docx";
+import { AlignmentType, Document, Packer, PageBreak, Paragraph, TableRow, TextRun, type Table } from "docx";
 import { CUSTOMER, PLACE } from "../data/fop.js";
 import type { DocData } from "../types.js";
 import { formatKop, totalKop } from "../utils/money.js";
 import { amountInWords, longDate } from "../utils/words.js";
-import { PAGE, cell, para, run, scaleWidths, table } from "./shared.js";
+import { FONT, PAGE, cell, para, run, scaleWidths, table } from "./shared.js";
 
 const S = 18;
 
@@ -34,7 +34,7 @@ function block(data: DocData): (Paragraph | Table)[] {
     para([run("Постачальник: ", S, true), run(`ФІЗИЧНА ОСОБА-ПІДПРИЄМЕЦЬ ${fop.fullName}`, S)], { after: 20 }),
     para(`Ідентифікаційний номер ${fop.taxId}`, { size: S, after: 20 }),
     para(`п/р ${fop.iban} у банку ${fop.bank}`, { size: S, after: 40 }),
-    para([run("Покупець: ", S, true), run(CUSTOMER, S)], { after: 100 }),
+    para([run("Покупець: ", S, true), run(CUSTOMER, S)], { after: 240 }),
     table(w, rows),
     para([run(`Всього: ${totalText}`, S, true)], { align: AlignmentType.RIGHT, before: 80 }),
     para(`Всього найменувань ${items.length} шт, на ${totalText} грн.`, { size: S, before: 60, after: 0 }),
@@ -44,7 +44,27 @@ function block(data: DocData): (Paragraph | Table)[] {
   ];
 }
 
+const LINE = 207; // висота рядка 9 пт у twips
+const NAME_CHARS_PER_LINE = 50;
+const FIXED_HEIGHT = 3500; // заголовок, реквізити, відступи, підсумки, підписи одного примірника
+const HALF_PAGE = 7500; // доступно під один примірник, коли два стоять на одному аркуші
+
+// Два примірники на одному аркуші (для розрізання) лише якщо вони вміщаються; інакше кожен на своїй сторінці.
+export function fitsTwoOnPage(data: DocData): boolean {
+  const rows = data.items.reduce((h, it) => h + Math.ceil(it.name.length / NAME_CHARS_PER_LINE) * LINE + 100, 340);
+  return FIXED_HEIGHT + rows <= HALF_PAGE;
+}
+
 export async function generateWaybill(data: DocData): Promise<Buffer> {
-  const doc = new Document({ sections: [{ properties: { page: PAGE }, children: block(data) }] });
+  // пунктир із тексту, бо порожній абзац із рамкою не всі програми показують
+  const cutLine = new Paragraph({
+    children: [new TextRun({ text: "- ".repeat(88).trim(), font: FONT, size: 16, color: "808080" })],
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 200, after: 200 },
+  });
+  const divider = fitsTwoOnPage(data) ? cutLine : new Paragraph({ children: [new PageBreak()] });
+  const doc = new Document({
+    sections: [{ properties: { page: PAGE }, children: [...block(data), divider, ...block(data)] }],
+  });
   return Packer.toBuffer(doc);
 }

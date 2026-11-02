@@ -4,6 +4,7 @@ import {
   Paragraph,
   Table,
   TableCell,
+  TableLayoutType,
   TableRow,
   TextRun,
   WidthType,
@@ -11,11 +12,13 @@ import {
 } from "docx";
 
 export const FONT = "Arial";
+const MARGIN_LEFT = 1134; // 2 см: поле під підшивання
+const MARGIN_OTHER = 567;
 export const PAGE = {
   size: { width: 11907, height: 16839 },
-  margin: { top: 567, right: 567, bottom: 567, left: 567 },
+  margin: { top: MARGIN_OTHER, right: MARGIN_OTHER, bottom: MARGIN_OTHER, left: MARGIN_LEFT },
 };
-export const CONTENT_WIDTH = 11907 - 567 * 2;
+export const CONTENT_WIDTH = 11907 - MARGIN_LEFT - MARGIN_OTHER;
 
 export function run(text: string, size: number, bold = false): TextRun {
   return new TextRun({ text, font: FONT, size, bold });
@@ -53,6 +56,7 @@ export function cell(
 export function table(widths: number[], rows: TableRow[]): Table {
   return new Table({
     width: { size: widths.reduce((a, b) => a + b, 0), type: WidthType.DXA },
+    layout: TableLayoutType.FIXED,
     columnWidths: widths,
     rows,
   });
