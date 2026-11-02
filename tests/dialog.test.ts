@@ -14,7 +14,15 @@ class MemorySessions implements SessionStore {
 
 async function setup(counters: CounterStore = new MemoryCounterStore()) {
   const calls: { method: string; payload: any }[] = [];
-  const bot = createBot({ token: "123:abc", allowedIds: [1], sessions: new MemorySessions(), counters });
+  const bot = createBot({
+    token: "123:abc",
+    allowedIds: [1],
+    sessions: new MemorySessions(),
+    counters,
+    sendDocument: async (chatId, file, filename, caption) => {
+      calls.push({ method: "sendDocument", payload: { chat_id: chatId, size: file.length, filename, caption } });
+    },
+  });
   bot.api.config.use(async (_prev, method, payload) => {
     calls.push({ method, payload });
     if (method === "getMe") return { ok: true, result: { id: 9, is_bot: true, first_name: "b", username: "b" } } as any;

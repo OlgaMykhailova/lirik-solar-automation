@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard, InputFile, type Context } from "grammy";
+import { Bot, InlineKeyboard, type Context } from "grammy";
 import type { CounterStore } from "../data/counters.js";
 import { nextDocNumber } from "../data/counters.js";
 import { FOPS } from "../data/fop.js";
@@ -7,6 +7,7 @@ import { generateWaybill } from "../generators/waybill.js";
 import type { DocData, DocType, FopId } from "../types.js";
 import { formatKop, parseQty, priceInKop, priceItems, totalKop } from "../utils/money.js";
 import type { Session, SessionStore } from "./session.js";
+import { createDocumentSender, type SendDocument } from "./telegram.js";
 
 const DOC_LABEL: Record<DocType, string> = { invoice: "рахунок", waybill: "накладну" };
 
@@ -29,6 +30,7 @@ export interface Deps {
   allowedIds: number[];
   sessions: SessionStore;
   counters: CounterStore;
+  sendDocument?: SendDocument;
 }
 
 export function parseAllowedIds(raw: string | undefined): number[] {
@@ -54,7 +56,7 @@ function summary(s: Session): string {
   ].join("\n");
 }
 
-export function createBot({ token, allowedIds, sessions, counters }: Deps): Bot {
+export function createBot({ token, allowedIds, sessions, counters, sendDocument = createDocumentSender(token) }: Deps): Bot {
   // Без цього перший API-виклик іде як відповідь на вебхук, Vercel завершує запит
   // і може зупинити функцію до закінчення генерації документа.
   const bot = new Bot(token, { client: { canUseWebhookReply: () => false } });
@@ -133,7 +135,7 @@ export function createBot({ token, allowedIds, sessions, counters }: Deps): Bot 
     const data: DocData = { fop, number, date, items: priceItems(s.items, s.rate) };
     const buffer = s.docType === "invoice" ? await generateInvoice(data) : await generateWaybill(data);
     const filename = `${s.docType === "invoice" ? "Рахунок на оплату" : "Видаткова накладна"} ${number} ${fop.signature}.docx`;
-    await ctx.replyWithDocument(new InputFile(buffer, filename), { caption: `№ ${number}` });
+    await sendDocument(ctx.chat?.id ?? ctx.from.id, buffer, filename, `№ ${number}`);
     await ctx.reply("Готово. Що далі?", { reply_markup: mainMenu() });
   });
 
