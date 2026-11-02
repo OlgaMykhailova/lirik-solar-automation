@@ -21,10 +21,9 @@ function getHandler() {
   return handler;
 }
 
-export async function POST(request: Request): Promise<Response> {
-  return getHandler()(request);
-}
-
-export function GET(): Response {
-  return new Response("ok");
-}
+export default {
+  async fetch(request: Request): Promise<Response> {
+    if (request.method !== "POST") return new Response("ok");
+    return getHandler()(request);
+  },
+};
