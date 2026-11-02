@@ -1,11 +1,11 @@
 import type { SendDocument } from "../bot/telegram.js";
-import type { GoogleDrive } from "./google.js";
+import type { DocumentUploader } from "./appsscript.js";
 
 const TIMEOUT_MS = 15_000;
 
 // Документ кладемо на Google Диск, у чат надсилаємо кнопки з посиланнями.
 // Прямі завантаження файлів у Telegram для цього бота зависають, тому файл через Telegram не йде.
-export function createDriveDocumentSender(token: string, drive: GoogleDrive, fallback: SendDocument): SendDocument {
+export function createDriveDocumentSender(token: string, drive: DocumentUploader, fallback: SendDocument): SendDocument {
   return async (chatId, file, filename, caption) => {
     let uploaded;
     try {

@@ -22,7 +22,6 @@ function getApp(): App {
   const redis = createRedis();
   const files = new RedisFileStore(redis);
   const urlSender = createUrlDocumentSender(token, files, () => origin);
-  const { GOOGLE_SERVICE_ACCOUNT_JSON: accountJson, GOOGLE_DRIVE_FOLDER_ID: folderId } = process.env;
   const sendDocument = buildSendDocument(token, urlSender);
   const bot = createBot({
     token,

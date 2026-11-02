@@ -1,130 +1,99 @@
-import { createPublicKey, createVerify, generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GoogleDrive, parseServiceAccount, signJwt } from "../src/drive/google.js";
+import { AppsScriptDrive } from "../src/drive/appsscript.js";
+import { buildSendDocument } from "../src/drive/delivery.js";
 import { createDriveDocumentSender } from "../src/drive/sender.js";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-const { privateKey, publicKey } = generateKeyPairSync("rsa", {
-  modulusLength: 2048,
-  privateKeyEncoding: { type: "pkcs8", format: "pem" },
-  publicKeyEncoding: { type: "spki", format: "pem" },
-});
-const account = { client_email: "bot@proj.iam.gserviceaccount.com", private_key: privateKey };
-const cfg = { account, folderId: "FOLDER1" };
+const URL_ = "https://script.google.com/macros/s/AKfy/exec";
 
-type Call = { url: string; method: string; headers: Record<string, string>; body: any };
-function stub(handler: (c: Call) => { status?: number; json?: unknown; text?: string }) {
+type Call = { url: string; init: any };
+function stub(reply: (c: Call) => { status?: number; text: string } | Error) {
   const calls: Call[] = [];
   vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
-    const call = { url, method: init.method ?? "GET", headers: init.headers ?? {}, body: init.body };
-    calls.push(call);
-    const r = handler(call);
+    const c = { url, init };
+    calls.push(c);
+    const r = reply(c);
+    if (r instanceof Error) throw r;
     const status = r.status ?? 200;
-    return { ok: status < 400, status, json: async () => r.json, text: async () => r.text ?? JSON.stringify(r.json ?? "") };
+    return { ok: status < 400, status, text: async () => r.text, json: async () => JSON.parse(r.text) };
   });
   return calls;
 }
 
-const happy = (c: Call) => {
-  if (c.url.includes("oauth2.googleapis.com")) return { json: { access_token: "AT", expires_in: 3600 } };
-  if (c.url.includes("uploadType=multipart")) return { json: { id: "FILE1", webViewLink: "https://drive.google.com/file/d/FILE1/view" } };
-  return { status: 500, text: "unexpected " + c.url };
-};
+const okReply = (c: Call) =>
+  c.url === URL_
+    ? { text: JSON.stringify({ ok: true, id: "FILE1", url: "https://drive.google.com/file/d/FILE1/view?usp=drivesdk" }) }
+    : { text: JSON.stringify({ ok: true }) };
 
-describe("сервісний акаунт", () => {
-  it("підписує JWT, який перевіряється публічним ключем", () => {
-    const jwt = signJwt(account, 1_000_000);
-    const [h, c, sig] = jwt.split(".");
-    expect(JSON.parse(Buffer.from(h!, "base64url").toString())).toEqual({ alg: "RS256", typ: "JWT" });
-    expect(JSON.parse(Buffer.from(c!, "base64url").toString())).toMatchObject({
-      iss: account.client_email,
-      aud: "https://oauth2.googleapis.com/token",
-      scope: "https://www.googleapis.com/auth/drive",
-      iat: 1_000_000,
-      exp: 1_003_600,
-    });
-    expect(createVerify("RSA-SHA256").update(`${h}.${c}`).verify(createPublicKey(publicKey), Buffer.from(sig!, "base64url"))).toBe(true);
+describe("AppsScriptDrive", () => {
+  it("надсилає секрет, назву й base64 і повертає посилання", async () => {
+    const calls = stub(okReply);
+    const up = await new AppsScriptDrive(URL_, "sec").uploadDocument(Buffer.from("DOCX-БАЙТИ"), "Рахунок 02-11-10.docx");
+    expect(up).toEqual({ id: "FILE1", viewUrl: "https://drive.google.com/file/d/FILE1/view?usp=drivesdk", downloadUrl: "https://drive.google.com/uc?export=download&id=FILE1" });
+    expect(calls[0]!.init.method).toBe("POST");
+    const body = JSON.parse(calls[0]!.init.body);
+    expect(body).toMatchObject({ secret: "sec", name: "Рахунок 02-11-10.docx" });
+    expect(Buffer.from(body.data, "base64").toString()).toBe("DOCX-БАЙТИ");
   });
 
-  it("терпить справжні переноси рядків у приватному ключі й лапки навколо", () => {
-    const broken = `{"client_email":"${account.client_email}","private_key":"${account.private_key}"}`;
-    expect(() => JSON.parse(broken)).toThrow();
-    expect(parseServiceAccount(broken)).toEqual(account);
-    expect(parseServiceAccount(`'${JSON.stringify(account)}'`)).toEqual(account);
+  it("повідомляє помилку скрипта (наприклад, неправильний секрет)", async () => {
+    stub(() => ({ text: JSON.stringify({ ok: false, error: "forbidden" }) }));
+    await expect(new AppsScriptDrive(URL_, "bad").uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow("скрипт Google: forbidden");
   });
 
-  it("терпить вміст без зовнішніх фігурних дужок", () => {
-    const inner = JSON.stringify(account).slice(1, -1);
-    expect(parseServiceAccount(inner)).toEqual(account);
-    expect(parseServiceAccount(`${inner},`)).toEqual(account);
+  it("підказує, що не так, коли замість JSON прийшла HTML-сторінка", async () => {
+    stub(() => ({ status: 200, text: "<html><body>Sign in – Google Accounts</body></html>" }));
+    await expect(new AppsScriptDrive(URL_, "s").uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/не JSON.*Anyone.*Sign in/s);
   });
 
-  it("парсить JSON-ключ і відхиляє неповний", () => {
-    expect(parseServiceAccount(JSON.stringify({ ...account, extra: 1 }))).toEqual(account);
-    expect(() => parseServiceAccount("{}")).toThrow(/client_email/);
-  });
-});
-
-describe("GoogleDrive", () => {
-  it("завантажує файл у вказану папку й кешує токен", async () => {
-    const calls = stub(happy);
-    const drive = new GoogleDrive(cfg);
-    const file = Buffer.from("DOCX-БАЙТИ");
-    const up = await drive.uploadDocument(file, "Рахунок 02-11-10.docx");
-    expect(up).toEqual({ id: "FILE1", viewUrl: "https://drive.google.com/file/d/FILE1/view", downloadUrl: "https://drive.google.com/uc?export=download&id=FILE1" });
-
-    const upload = calls.find((c) => c.url.includes("uploadType=multipart"))!;
-    expect(upload.headers.authorization).toBe("Bearer AT");
-    expect(upload.headers["content-type"]).toMatch(/^multipart\/related; boundary=/);
-    const body = (upload.body as Buffer).toString("utf8");
-    expect(body).toContain('"name":"Рахунок 02-11-10.docx"');
-    expect(body).toContain('"parents":["FOLDER1"]');
-    expect(body).toContain("DOCX-БАЙТИ");
-    expect(calls.some((c) => c.url.includes("/permissions"))).toBe(false);
-
-    await drive.uploadDocument(file, "b.docx");
-    expect(calls.filter((c) => c.url.includes("oauth2.googleapis.com"))).toHaveLength(1);
-  });
-
-  it("повідомляє про відмову Диска (наприклад, немає доступу до папки)", async () => {
-    stub((c) => (c.url.includes("oauth2") ? happy(c) : { status: 404, text: "File not found: FOLDER1" }));
-    await expect(new GoogleDrive(cfg).uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/відповідь 404/);
-  });
-
-  it("називає крок, на якому Google не відповів", async () => {
-    vi.stubGlobal("fetch", async (url: string) => {
-      if (url.includes("oauth2")) return { ok: true, status: 200, json: async () => ({ access_token: "AT" }), text: async () => "" };
-      throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
-    });
-    await expect(new GoogleDrive(cfg).uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/завантаження файлу на Диск: немає відповіді від Google за \d+ с/);
-    vi.stubGlobal("fetch", async () => { throw Object.assign(new Error("t"), { name: "TimeoutError" }); });
-    await expect(new GoogleDrive(cfg).uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/вхід у Google \(токен\): немає відповіді/);
-  });
-
-  it("повідомляє про помилку входу", async () => {
-    stub(() => ({ status: 400, json: { error: "invalid_grant", error_description: "bad jwt" } }));
-    await expect(new GoogleDrive(cfg).uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/invalid_grant/);
+  it("називає тайм-аут і мережеву помилку", async () => {
+    stub(() => Object.assign(new Error("aborted"), { name: "TimeoutError" }));
+    await expect(new AppsScriptDrive(URL_, "s").uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/скрипт Google не відповів за \d+ с/);
+    stub(() => new Error("getaddrinfo ENOTFOUND"));
+    await expect(new AppsScriptDrive(URL_, "s").uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/недоступний: getaddrinfo/);
   });
 });
 
 describe("відправник через Диск", () => {
+  const uploader = { uploadDocument: async () => ({ id: "F", viewUrl: "https://v", downloadUrl: "https://d" }) };
+
   it("надсилає в чат кнопки Відкрити/Завантажити", async () => {
-    const calls = stub((c) => (c.url.includes("api.telegram.org") ? { json: { ok: true } } : happy(c)));
+    const calls = stub(() => ({ text: JSON.stringify({ ok: true }) }));
     const fallback = vi.fn();
-    await createDriveDocumentSender("T", new GoogleDrive(cfg), fallback)(42, Buffer.from("x"), "a.docx", "№ 02-11-10");
-    const payload = JSON.parse(calls.find((c) => c.url.includes("api.telegram.org/botT/sendMessage"))!.body);
-    expect(payload.chat_id).toBe(42);
-    expect(payload.text).toBe("№ 02-11-10\na.docx");
-    expect(payload.reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(["Відкрити", "Завантажити"]);
+    await createDriveDocumentSender("T", uploader, fallback)(42, Buffer.from("x"), "a.docx", "№ 02-11-10");
+    const payload = JSON.parse(calls[0]!.init.body);
+    expect(calls[0]!.url).toBe("https://api.telegram.org/botT/sendMessage");
+    expect(payload).toMatchObject({ chat_id: 42, text: "№ 02-11-10\na.docx" });
+    expect(payload.reply_markup.inline_keyboard[0]).toEqual([{ text: "Відкрити", url: "https://v" }, { text: "Завантажити", url: "https://d" }]);
     expect(fallback).not.toHaveBeenCalled();
   });
 
-  it("при збої Диска переходить на запасну доставку", async () => {
-    stub(() => ({ status: 400, json: { error: "invalid_grant" } }));
-    const fallback = vi.fn(async () => undefined);
+  it("при збої Диска переходить на запасну доставку з поясненням", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await createDriveDocumentSender("T", new GoogleDrive(cfg), fallback)(42, Buffer.from("x"), "a.docx", "№ 1");
-    expect(fallback).toHaveBeenCalledWith(42, expect.any(Buffer), "a.docx", expect.stringMatching(/^№ 1\nGoogle Диск не спрацював: .*invalid_grant/));
+    const fallback = vi.fn(async () => undefined);
+    const failing = { uploadDocument: async () => { throw new Error("скрипт Google: forbidden"); } };
+    await createDriveDocumentSender("T", failing, fallback)(42, Buffer.from("x"), "a.docx", "№ 1");
+    expect(fallback).toHaveBeenCalledWith(42, expect.any(Buffer), "a.docx", "№ 1\nGoogle Диск не спрацював: скрипт Google: forbidden");
+  });
+});
+
+describe("вибір способу доставки", () => {
+  const buf = Buffer.from("x");
+
+  it("без змінних використовує запасну доставку й називає відсутню", async () => {
+    const fallback = vi.fn(async () => undefined);
+    await buildSendDocument("T", fallback, {})(1, buf, "a.docx", "№ 1");
+    expect(fallback).toHaveBeenCalledWith(1, buf, "a.docx", "№ 1\nGoogle Диск не налаштований: немає змінної GOOGLE_SCRIPT_URL, GOOGLE_SCRIPT_SECRET");
+    await buildSendDocument("T", fallback, { GOOGLE_SCRIPT_URL: "u" })(1, buf, "a.docx", "№ 1");
+    expect(fallback).toHaveBeenLastCalledWith(1, buf, "a.docx", expect.stringContaining("немає змінної GOOGLE_SCRIPT_SECRET"));
+  });
+
+  it("із змінними надсилає через Диск, а не запасним шляхом", async () => {
+    const calls = stub((c) => (c.url === URL_ ? okReply(c) : { text: "{}" }));
+    const fallback = vi.fn(async () => undefined);
+    await buildSendDocument("T", fallback, { GOOGLE_SCRIPT_URL: ` ${URL_}\n`, GOOGLE_SCRIPT_SECRET: "sec " })(1, buf, "a.docx", "№ 1");
+    expect(fallback).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.url)).toEqual([URL_, "https://api.telegram.org/botT/sendMessage"]);
   });
 });
