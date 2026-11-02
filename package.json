@@ -1,0 +1,29 @@
+{
+  "name": "lirik-solar-automation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "set-webhook": "tsx scripts/set-webhook.ts",
+    "sample": "tsx scripts/sample.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.40.0",
+    "docx": "^9.15.0",
+    "grammy": "^1.46.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@vercel/node": "^29.0.0",
+    "dotenv": "^18.0.9",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12"
+  }
+}
