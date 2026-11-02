@@ -84,6 +84,12 @@ describe("діалог бота", () => {
     expect(h.calls.filter((c) => c.method === "sendDocument")).toHaveLength(1);
   });
 
+  it("не використовує webhook reply (інакше Vercel обриває обробку)", async () => {
+    const h = await setup();
+    // clientConfig приватна в типах grammY, але саме вона вирішує, чи йде перший API-виклик як відповідь на вебхук
+    expect((h.bot as any).clientConfig.canUseWebhookReply("answerCallbackQuery")).toBe(false);
+  });
+
   it("не пускає сторонніх", async () => {
     const h = await setup();
     await h.text("/start", { id: 2, is_bot: false, first_name: "x" });

@@ -55,7 +55,18 @@ function summary(s: Session): string {
 }
 
 export function createBot({ token, allowedIds, sessions, counters }: Deps): Bot {
-  const bot = new Bot(token);
+  // Без цього перший API-виклик іде як відповідь на вебхук, Vercel завершує запит
+  // і може зупинити функцію до закінчення генерації документа.
+  const bot = new Bot(token, { client: { canUseWebhookReply: () => false } });
+
+  bot.catch(async (err) => {
+    console.error("Помилка обробки оновлення:", err.error);
+    try {
+      await err.ctx.reply("Сталася помилка. Спробуйте ще раз: /start");
+    } catch {
+      // нічого: користувач міг заблокувати бота
+    }
+  });
 
   bot.use(async (ctx, next) => {
     const id = ctx.from?.id;
