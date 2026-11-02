@@ -22,8 +22,17 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SCOPE = "https://www.googleapis.com/auth/drive";
 const TIMEOUT_MS = 15_000;
 
-export function parseServiceAccount(json: string): ServiceAccount {
-  const data = JSON.parse(json) as Partial<ServiceAccount>;
+export function parseServiceAccount(raw: string): ServiceAccount {
+  let text = raw.trim();
+  if (text.startsWith("'") && text.endsWith("'")) text = text.slice(1, -1);
+  let data: Partial<ServiceAccount>;
+  try {
+    data = JSON.parse(text) as Partial<ServiceAccount>;
+  } catch {
+    // у полі Vercel \n у приватному ключі нерідко стають справжніми переносами рядків, що ламає JSON
+    const fixed = text.replace(/"private_key"\s*:\s*"([^"]*)"/, (_m, key: string) => `"private_key": "${key.replace(/\r?\n/g, "\\n")}"`);
+    data = JSON.parse(fixed) as Partial<ServiceAccount>;
+  }
   if (!data.client_email || !data.private_key) throw new Error("У GOOGLE_SERVICE_ACCOUNT_JSON немає client_email або private_key");
   return { client_email: data.client_email, private_key: data.private_key };
 }

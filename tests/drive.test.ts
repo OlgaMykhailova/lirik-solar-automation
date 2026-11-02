@@ -47,6 +47,13 @@ describe("сервісний акаунт", () => {
     expect(createVerify("RSA-SHA256").update(`${h}.${c}`).verify(createPublicKey(publicKey), Buffer.from(sig!, "base64url"))).toBe(true);
   });
 
+  it("терпить справжні переноси рядків у приватному ключі й лапки навколо", () => {
+    const broken = `{"client_email":"${account.client_email}","private_key":"${account.private_key}"}`;
+    expect(() => JSON.parse(broken)).toThrow();
+    expect(parseServiceAccount(broken)).toEqual(account);
+    expect(parseServiceAccount(`'${JSON.stringify(account)}'`)).toEqual(account);
+  });
+
   it("парсить JSON-ключ і відхиляє неповний", () => {
     expect(parseServiceAccount(JSON.stringify({ ...account, extra: 1 }))).toEqual(account);
     expect(() => parseServiceAccount("{}")).toThrow(/client_email/);
