@@ -1,5 +1,5 @@
 import type { SendDocument } from "../bot/telegram.js";
-import type { DocumentUploader } from "./appsscript.js";
+import type { DocumentUploader } from "./types.js";
 
 const TIMEOUT_MS = 15_000;
 

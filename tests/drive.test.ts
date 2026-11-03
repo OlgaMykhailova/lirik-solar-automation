@@ -80,20 +80,37 @@ describe("відправник через Диск", () => {
 
 describe("вибір способу доставки", () => {
   const buf = Buffer.from("x");
+  const kv = { get: async () => null, set: async () => undefined };
+  const NOTE = "Google Диск не налаштований: немає змінних GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN (або GOOGLE_SCRIPT_URL і GOOGLE_SCRIPT_SECRET)";
 
-  it("без змінних використовує запасну доставку й називає відсутню", async () => {
+  it("без змінних використовує запасну доставку й пояснює чому", async () => {
     const fallback = vi.fn(async () => undefined);
-    await buildSendDocument("T", fallback, {})(1, buf, "a.docx", "№ 1");
-    expect(fallback).toHaveBeenCalledWith(1, buf, "a.docx", "№ 1\nGoogle Диск не налаштований: немає змінної GOOGLE_SCRIPT_URL, GOOGLE_SCRIPT_SECRET");
-    await buildSendDocument("T", fallback, { GOOGLE_SCRIPT_URL: "u" })(1, buf, "a.docx", "№ 1");
-    expect(fallback).toHaveBeenLastCalledWith(1, buf, "a.docx", expect.stringContaining("немає змінної GOOGLE_SCRIPT_SECRET"));
+    await buildSendDocument("T", fallback, kv, {})(1, buf, "a.docx", "№ 1");
+    expect(fallback).toHaveBeenCalledWith(1, buf, "a.docx", `№ 1\n${NOTE}`);
+    await buildSendDocument("T", fallback, kv, { GOOGLE_SCRIPT_URL: "u", GOOGLE_CLIENT_ID: "c" })(1, buf, "a.docx", "№ 1");
+    expect(fallback).toHaveBeenLastCalledWith(1, buf, "a.docx", `№ 1\n${NOTE}`);
   });
 
-  it("із змінними надсилає через Диск, а не запасним шляхом", async () => {
+  it("зі змінними скрипта надсилає через Диск, а не запасним шляхом", async () => {
     const calls = stub((c) => (c.url === URL_ ? okReply(c) : { text: "{}" }));
     const fallback = vi.fn(async () => undefined);
-    await buildSendDocument("T", fallback, { GOOGLE_SCRIPT_URL: ` ${URL_}\n`, GOOGLE_SCRIPT_SECRET: "sec " })(1, buf, "a.docx", "№ 1");
+    await buildSendDocument("T", fallback, kv, { GOOGLE_SCRIPT_URL: ` ${URL_}\n`, GOOGLE_SCRIPT_SECRET: "sec " })(1, buf, "a.docx", "№ 1");
     expect(fallback).not.toHaveBeenCalled();
     expect(calls.map((c) => c.url)).toEqual([URL_, "https://api.telegram.org/botT/sendMessage"]);
+  });
+
+  it("зі змінними OAuth надсилає через Диск, і OAuth має пріоритет над скриптом", async () => {
+    const calls = stub((c) => {
+      if (c.url.includes("oauth2.googleapis.com")) return { text: JSON.stringify({ access_token: "AT", expires_in: 3600 }) };
+      if (c.url.includes("fields=id,webViewLink")) return { text: JSON.stringify({ id: "F1" }) };
+      if (c.url.includes("fields=id")) return { text: JSON.stringify({ id: "FOLDER" }) };
+      return { text: "{}" };
+    });
+    const fallback = vi.fn(async () => undefined);
+    const env = { GOOGLE_CLIENT_ID: "c", GOOGLE_CLIENT_SECRET: "s", GOOGLE_REFRESH_TOKEN: "r", GOOGLE_SCRIPT_URL: URL_, GOOGLE_SCRIPT_SECRET: "x" };
+    await buildSendDocument("T", fallback, kv, env)(1, buf, "a.docx", "№ 1");
+    expect(fallback).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.url === URL_)).toBe(false);
+    expect(calls.some((c) => c.url.includes("upload/drive/v3/files"))).toBe(true);
   });
 });

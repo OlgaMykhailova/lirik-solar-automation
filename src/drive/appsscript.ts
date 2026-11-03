@@ -1,12 +1,4 @@
-export interface UploadedFile {
-  id: string;
-  viewUrl: string;
-  downloadUrl: string;
-}
-
-export interface DocumentUploader {
-  uploadDocument(file: Buffer, filename: string): Promise<UploadedFile>;
-}
+import type { DocumentUploader, UploadedFile } from "./types.js";
 
 const TIMEOUT_MS = 20_000;
 

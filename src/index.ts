@@ -5,6 +5,7 @@ import { RedisSessionStore, createRedis } from "./bot/session.js";
 import { DOCX_MIME, createUrlDocumentSender } from "./bot/telegram.js";
 import { buildSendDocument } from "./drive/delivery.js";
 import { RedisCounterStore } from "./data/counters.js";
+import { homePage, privacyPage } from "./pages.js";
 
 interface App {
   handler: (req: Request) => Promise<Response>;
@@ -22,7 +23,8 @@ function getApp(): App {
   const redis = createRedis();
   const files = new RedisFileStore(redis);
   const urlSender = createUrlDocumentSender(token, files, () => origin);
-  const sendDocument = buildSendDocument(token, urlSender);
+  const kv = { get: async (k: string) => (await redis.get<string>(k)) ?? null, set: async (k: string, v: string) => void (await redis.set(k, v)) };
+  const sendDocument = buildSendDocument(token, urlSender, kv);
   const bot = createBot({
     token,
     allowedIds: parseAllowedIds(process.env.ALLOWED_USER_IDS),
@@ -55,6 +57,8 @@ export default {
     const url = new URL(request.url);
     origin = url.origin;
     if ((request.method === "GET" || request.method === "HEAD") && url.pathname.startsWith("/f/")) return serveFile(url);
+    if (request.method === "GET" && url.pathname === "/privacy") return privacyPage(process.env.CONTACT_EMAIL);
+    if (request.method === "GET" && url.pathname === "/") return homePage();
     if (request.method !== "POST") return new Response("ok");
     return getApp().handler(request);
   },
