@@ -1,59 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AppsScriptDrive } from "../src/drive/appsscript.js";
 import { buildSendDocument } from "../src/drive/delivery.js";
 import { createDriveDocumentSender } from "../src/drive/sender.js";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-const URL_ = "https://script.google.com/macros/s/AKfy/exec";
-
 type Call = { url: string; init: any };
-function stub(reply: (c: Call) => { status?: number; text: string } | Error) {
+function stub(reply: (c: Call) => { status?: number; text: string }) {
   const calls: Call[] = [];
   vi.stubGlobal("fetch", async (url: string, init: any = {}) => {
     const c = { url, init };
     calls.push(c);
     const r = reply(c);
-    if (r instanceof Error) throw r;
     const status = r.status ?? 200;
     return { ok: status < 400, status, text: async () => r.text, json: async () => JSON.parse(r.text) };
   });
   return calls;
 }
-
-const okReply = (c: Call) =>
-  c.url === URL_
-    ? { text: JSON.stringify({ ok: true, id: "FILE1", url: "https://drive.google.com/file/d/FILE1/view?usp=drivesdk" }) }
-    : { text: JSON.stringify({ ok: true }) };
-
-describe("AppsScriptDrive", () => {
-  it("надсилає секрет, назву й base64 і повертає посилання", async () => {
-    const calls = stub(okReply);
-    const up = await new AppsScriptDrive(URL_, "sec").uploadDocument(Buffer.from("DOCX-БАЙТИ"), "Рахунок 02-11-10.docx");
-    expect(up).toEqual({ id: "FILE1", viewUrl: "https://drive.google.com/file/d/FILE1/view?usp=drivesdk", downloadUrl: "https://drive.google.com/uc?export=download&id=FILE1" });
-    expect(calls[0]!.init.method).toBe("POST");
-    const body = JSON.parse(calls[0]!.init.body);
-    expect(body).toMatchObject({ secret: "sec", name: "Рахунок 02-11-10.docx" });
-    expect(Buffer.from(body.data, "base64").toString()).toBe("DOCX-БАЙТИ");
-  });
-
-  it("повідомляє помилку скрипта (наприклад, неправильний секрет)", async () => {
-    stub(() => ({ text: JSON.stringify({ ok: false, error: "forbidden" }) }));
-    await expect(new AppsScriptDrive(URL_, "bad").uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow("скрипт Google: forbidden");
-  });
-
-  it("підказує, що не так, коли замість JSON прийшла HTML-сторінка", async () => {
-    stub(() => ({ status: 200, text: "<html><body>Sign in – Google Accounts</body></html>" }));
-    await expect(new AppsScriptDrive(URL_, "s").uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/не JSON.*Anyone.*Sign in/s);
-  });
-
-  it("називає тайм-аут і мережеву помилку", async () => {
-    stub(() => Object.assign(new Error("aborted"), { name: "TimeoutError" }));
-    await expect(new AppsScriptDrive(URL_, "s").uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/скрипт Google не відповів за \d+ с/);
-    stub(() => new Error("getaddrinfo ENOTFOUND"));
-    await expect(new AppsScriptDrive(URL_, "s").uploadDocument(Buffer.from("x"), "a.docx")).rejects.toThrow(/недоступний: getaddrinfo/);
-  });
-});
 
 describe("відправник через Диск", () => {
   const uploader = { uploadDocument: async () => ({ id: "F", viewUrl: "https://v", downloadUrl: "https://d" }) };
@@ -72,34 +34,26 @@ describe("відправник через Диск", () => {
   it("при збої Диска переходить на запасну доставку з поясненням", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const fallback = vi.fn(async () => undefined);
-    const failing = { uploadDocument: async () => { throw new Error("скрипт Google: forbidden"); } };
+    const failing = { uploadDocument: async () => { throw new Error("вхід у Google (токен): invalid_grant"); } };
     await createDriveDocumentSender("T", failing, fallback)(42, Buffer.from("x"), "a.docx", "№ 1");
-    expect(fallback).toHaveBeenCalledWith(42, expect.any(Buffer), "a.docx", "№ 1\nGoogle Диск не спрацював: скрипт Google: forbidden");
+    expect(fallback).toHaveBeenCalledWith(42, expect.any(Buffer), "a.docx", "№ 1\nGoogle Диск не спрацював: вхід у Google (токен): invalid_grant");
   });
 });
 
 describe("вибір способу доставки", () => {
   const buf = Buffer.from("x");
   const kv = { get: async () => null, set: async () => undefined };
-  const NOTE = "Google Диск не налаштований: немає змінних GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN (або GOOGLE_SCRIPT_URL і GOOGLE_SCRIPT_SECRET)";
+  const NOTE = "Google Диск не налаштований: немає змінних GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN";
 
-  it("без змінних використовує запасну доставку й пояснює чому", async () => {
+  it("без змінних OAuth використовує запасну доставку й пояснює чому", async () => {
     const fallback = vi.fn(async () => undefined);
     await buildSendDocument("T", fallback, kv, {})(1, buf, "a.docx", "№ 1");
     expect(fallback).toHaveBeenCalledWith(1, buf, "a.docx", `№ 1\n${NOTE}`);
-    await buildSendDocument("T", fallback, kv, { GOOGLE_SCRIPT_URL: "u", GOOGLE_CLIENT_ID: "c" })(1, buf, "a.docx", "№ 1");
+    await buildSendDocument("T", fallback, kv, { GOOGLE_CLIENT_ID: "c", GOOGLE_CLIENT_SECRET: "s" })(1, buf, "a.docx", "№ 1");
     expect(fallback).toHaveBeenLastCalledWith(1, buf, "a.docx", `№ 1\n${NOTE}`);
   });
 
-  it("зі змінними скрипта надсилає через Диск, а не запасним шляхом", async () => {
-    const calls = stub((c) => (c.url === URL_ ? okReply(c) : { text: "{}" }));
-    const fallback = vi.fn(async () => undefined);
-    await buildSendDocument("T", fallback, kv, { GOOGLE_SCRIPT_URL: ` ${URL_}\n`, GOOGLE_SCRIPT_SECRET: "sec " })(1, buf, "a.docx", "№ 1");
-    expect(fallback).not.toHaveBeenCalled();
-    expect(calls.map((c) => c.url)).toEqual([URL_, "https://api.telegram.org/botT/sendMessage"]);
-  });
-
-  it("зі змінними OAuth надсилає через Диск, і OAuth має пріоритет над скриптом", async () => {
+  it("зі змінними OAuth надсилає через Диск, а не запасним шляхом", async () => {
     const calls = stub((c) => {
       if (c.url.includes("oauth2.googleapis.com")) return { text: JSON.stringify({ access_token: "AT", expires_in: 3600 }) };
       if (c.url.includes("fields=id,webViewLink")) return { text: JSON.stringify({ id: "F1" }) };
@@ -107,10 +61,10 @@ describe("вибір способу доставки", () => {
       return { text: "{}" };
     });
     const fallback = vi.fn(async () => undefined);
-    const env = { GOOGLE_CLIENT_ID: "c", GOOGLE_CLIENT_SECRET: "s", GOOGLE_REFRESH_TOKEN: "r", GOOGLE_SCRIPT_URL: URL_, GOOGLE_SCRIPT_SECRET: "x" };
+    const env = { GOOGLE_CLIENT_ID: " c ", GOOGLE_CLIENT_SECRET: "s", GOOGLE_REFRESH_TOKEN: "r\n" };
     await buildSendDocument("T", fallback, kv, env)(1, buf, "a.docx", "№ 1");
     expect(fallback).not.toHaveBeenCalled();
-    expect(calls.some((c) => c.url === URL_)).toBe(false);
     expect(calls.some((c) => c.url.includes("upload/drive/v3/files"))).toBe(true);
+    expect(String(calls[0]!.init.body)).toContain("client_id=c&");
   });
 });

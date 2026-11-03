@@ -29,7 +29,7 @@ function plural(n: number, one: string, few: string, many: string): string {
   return many;
 }
 
-export function integerToWords(n: number, feminine = true): string {
+function integerToWords(n: number, feminine = true): string {
   if (n === 0) return "нуль";
   const millions = Math.floor(n / 1_000_000);
   const thousands = Math.floor((n % 1_000_000) / 1000);
@@ -52,7 +52,7 @@ export function amountInWords(kop: number): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-export interface DateParts {
+interface DateParts {
   day: string;
   month: string;
   monthGen: string;

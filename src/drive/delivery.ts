@@ -1,5 +1,4 @@
 import type { SendDocument } from "../bot/telegram.js";
-import { AppsScriptDrive } from "./appsscript.js";
 import { OAuthDrive } from "./oauth.js";
 import { createDriveDocumentSender } from "./sender.js";
 import type { Kv } from "./types.js";
@@ -11,14 +10,9 @@ function withNote(fallback: SendDocument, note: string): SendDocument {
 
 export function buildSendDocument(token: string, fallback: SendDocument, kv: Kv, env: NodeJS.ProcessEnv = process.env): SendDocument {
   const { GOOGLE_CLIENT_ID: clientId, GOOGLE_CLIENT_SECRET: clientSecret, GOOGLE_REFRESH_TOKEN: refreshToken } = env;
-  if (clientId && clientSecret && refreshToken) {
-    const drive = new OAuthDrive({ clientId: clientId.trim(), clientSecret: clientSecret.trim(), refreshToken: refreshToken.trim() }, kv);
-    return createDriveDocumentSender(token, drive, fallback);
+  if (!clientId || !clientSecret || !refreshToken) {
+    return withNote(fallback, "Google Диск не налаштований: немає змінних GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN");
   }
-  const { GOOGLE_SCRIPT_URL: url, GOOGLE_SCRIPT_SECRET: secret } = env;
-  if (url && secret) return createDriveDocumentSender(token, new AppsScriptDrive(url.trim(), secret.trim()), fallback);
-  return withNote(
-    fallback,
-    "Google Диск не налаштований: немає змінних GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN (або GOOGLE_SCRIPT_URL і GOOGLE_SCRIPT_SECRET)",
-  );
+  const drive = new OAuthDrive({ clientId: clientId.trim(), clientSecret: clientSecret.trim(), refreshToken: refreshToken.trim() }, kv);
+  return createDriveDocumentSender(token, drive, fallback);
 }

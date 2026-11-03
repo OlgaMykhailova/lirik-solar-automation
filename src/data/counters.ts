@@ -2,13 +2,13 @@ import { Redis } from "@upstash/redis";
 import type { DocType, FopId } from "../types.js";
 import { kyivDateParts } from "../utils/words.js";
 
-export const FIRST_NUMBER = 10;
+const FIRST_NUMBER = 10;
 
 export interface CounterStore {
   next(key: string): Promise<number>;
 }
 
-export function counterKey(fop: FopId, type: DocType, date: Date): string {
+function counterKey(fop: FopId, type: DocType, date: Date): string {
   const d = kyivDateParts(date);
   return `counter:${fop}:${type}:${d.year}-${d.month}-${d.day}`;
 }

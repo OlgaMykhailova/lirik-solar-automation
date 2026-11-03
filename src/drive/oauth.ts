@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { DOCX_MIME } from "../bot/telegram.js";
 import type { DocumentUploader, Kv, UploadedFile } from "./types.js";
 
-export interface OAuthConfig {
+interface OAuthConfig {
   clientId: string;
   clientSecret: string;
   refreshToken: string;

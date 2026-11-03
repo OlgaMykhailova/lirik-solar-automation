@@ -18,7 +18,7 @@ export const PAGE = {
   size: { width: 11907, height: 16839 },
   margin: { top: MARGIN_OTHER, right: MARGIN_OTHER, bottom: MARGIN_OTHER, left: MARGIN_LEFT },
 };
-export const CONTENT_WIDTH = 11907 - MARGIN_LEFT - MARGIN_OTHER;
+const CONTENT_WIDTH = 11907 - MARGIN_LEFT - MARGIN_OTHER;
 
 export function run(text: string, size: number, bold = false): TextRun {
   return new TextRun({ text, font: FONT, size, bold });

@@ -1,6 +1,6 @@
 import type { Item, PricedItem } from "../types.js";
 
-export function parseDecimal(input: string, maxDecimals: number): number | null {
+function parseDecimal(input: string, maxDecimals: number): number | null {
   const s = input.trim().replace(/\s/g, "").replace(",", ".");
   if (!/^\d+(\.\d+)?$/.test(s)) return null;
   const [, frac = ""] = s.split(".");
