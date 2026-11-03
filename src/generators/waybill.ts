@@ -34,7 +34,7 @@ function block(data: DocData): (Paragraph | Table)[] {
     para([run("Постачальник: ", S, true), run(`ФІЗИЧНА ОСОБА-ПІДПРИЄМЕЦЬ ${fop.fullName}`, S)], { after: 20 }),
     para(`Ідентифікаційний номер ${fop.taxId}`, { size: S, after: 20 }),
     para(`п/р ${fop.iban} у банку ${fop.bank}`, { size: S, after: 40 }),
-    para([run("Покупець: ", S, true), run(CUSTOMER, S)], { after: 240 }),
+    para([run("Покупець: ", S, true), run(CUSTOMER, S)], { after: 480 }),
     table(w, rows),
     para([run(`Всього: ${totalText}`, S, true)], { align: AlignmentType.RIGHT, before: 80 }),
     para(`Всього найменувань ${items.length} шт, на ${totalText} грн.`, { size: S, before: 60, after: 0 }),
@@ -46,7 +46,7 @@ function block(data: DocData): (Paragraph | Table)[] {
 
 const LINE = 207; // висота рядка 9 пт у twips
 const NAME_CHARS_PER_LINE = 50;
-const FIXED_HEIGHT = 3500; // заголовок, реквізити, відступи, підсумки, підписи одного примірника
+const FIXED_HEIGHT = 3750; // заголовок, реквізити, відступи, підсумки, підписи одного примірника
 const HALF_PAGE = 7500; // доступно під один примірник, коли два стоять на одному аркуші
 
 // Два примірники на одному аркуші (для розрізання) лише якщо вони вміщаються; інакше кожен на своїй сторінці.

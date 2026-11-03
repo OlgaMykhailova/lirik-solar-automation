@@ -62,7 +62,7 @@ export async function generateInvoice(data: DocData): Promise<Buffer> {
           para([run("Виконавець: ", 22, true), run(fopLine, 22)]),
           para(`Ідентифікаційний номер ${fop.taxId}${phone}`, { size: 22 }),
           para(`п/р ${fop.iban} у банку ${fop.bank}`, { size: 22 }),
-          para([run("Замовник: ", 22, true), run(CUSTOMER, 22)], { after: 360 }),
+          para([run("Замовник: ", 22, true), run(CUSTOMER, 22)], { after: 720 }),
           table(w, rows),
           para([run(`Всього, без ПДВ: ${totalText}`, 22, true)], { align: AlignmentType.RIGHT, before: 120 }),
           para(`Всього найменувань ${items.length} шт, на ${totalText} грн.`, { size: 22, before: 120, after: 0 }),
