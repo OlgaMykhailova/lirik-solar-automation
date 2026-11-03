@@ -47,7 +47,7 @@ function block(data: DocData): (Paragraph | Table)[] {
 const LINE = 207; // висота рядка 9 пт у twips
 const NAME_CHARS_PER_LINE = 50;
 const FIXED_HEIGHT = 3750; // заголовок, реквізити, відступи, підсумки, підписи одного примірника
-const HALF_PAGE = 7500; // доступно під один примірник, коли два стоять на одному аркуші
+const HALF_PAGE = 7300; // доступно під один примірник, коли два стоять на одному аркуші
 
 // Два примірники на одному аркуші (для розрізання) лише якщо вони вміщаються; інакше кожен на своїй сторінці.
 export function fitsTwoOnPage(data: DocData): boolean {
@@ -60,7 +60,7 @@ export async function generateWaybill(data: DocData): Promise<Buffer> {
   const cutLine = new Paragraph({
     children: [new TextRun({ text: "- ".repeat(88).trim(), font: FONT, size: 16, color: "808080" })],
     alignment: AlignmentType.CENTER,
-    spacing: { before: 200, after: 200 },
+    spacing: { before: 600, after: 200 },
   });
   const divider = fitsTwoOnPage(data) ? cutLine : new Paragraph({ children: [new PageBreak()] });
   const doc = new Document({

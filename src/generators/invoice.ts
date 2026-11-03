@@ -58,7 +58,7 @@ export async function generateInvoice(data: DocData): Promise<Buffer> {
         children: [
           para(NOTICE, { size: 18, after: 160 }),
           payment,
-          para(`Рахунок на оплату № ${data.number} від ${longDate(data.date)}`, { size: 28, bold: true, before: 240, after: 160 }),
+          para(`Рахунок на оплату № ${data.number} від ${longDate(data.date)}`, { size: 28, bold: true, before: 600, after: 160 }),
           para([run("Виконавець: ", 22, true), run(fopLine, 22)]),
           para(`Ідентифікаційний номер ${fop.taxId}${phone}`, { size: 22 }),
           para(`п/р ${fop.iban} у банку ${fop.bank}`, { size: 22 }),
