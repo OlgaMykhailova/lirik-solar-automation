@@ -1,7 +1,7 @@
 import { Redis } from "@upstash/redis";
 import type { DocType, FopId, Item } from "../types.js";
 
-type Step = "name" | "qty" | "price" | "more" | "rate" | "confirm";
+type Step = "name" | "qty" | "price" | "more" | "rate" | "warranty" | "confirm";
 
 export interface Session {
   step: Step;
@@ -11,6 +11,7 @@ export interface Session {
   draftName?: string;
   draftQty?: number;
   rate?: string;
+  warranty?: boolean;
 }
 
 export interface SessionStore {

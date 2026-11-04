@@ -3,6 +3,7 @@ import type { CounterStore } from "../data/counters.js";
 import { nextDocNumber } from "../data/counters.js";
 import { FOPS } from "../data/fop.js";
 import { generateInvoice } from "../generators/invoice.js";
+import { generateWarranty } from "../generators/warranty.js";
 import { generateWaybill } from "../generators/waybill.js";
 import type { DocData, DocType, FopId } from "../types.js";
 import { formatKop, parseQty, priceInKop, priceItems, totalKop } from "../utils/money.js";
@@ -23,6 +24,8 @@ const fopMenu = () =>
 const cancelOnly = () => new InlineKeyboard().text("Скасувати", "cancel");
 const moreMenu = () =>
   new InlineKeyboard().text("Додати ще товар", "more:add").row().text("Всі товари введені", "more:next").row().text("Скасувати", "cancel");
+const warrantyMenu = () =>
+  new InlineKeyboard().text("Так", "warranty:yes").text("Ні", "warranty:no").row().text("Скасувати", "cancel");
 const confirmMenu = () => new InlineKeyboard().text("Згенерувати", "gen").text("Скасувати", "cancel");
 
 interface Deps {
@@ -49,6 +52,7 @@ function summary(s: Session): string {
   return [
     `Документ: ${s.docType === "invoice" ? "рахунок на оплату" : "видаткова накладна"}`,
     `${fop.buttonLabel}, курс ${s.rate}`,
+    ...(s.docType === "waybill" ? [`Гарантійний талон: ${s.warranty ? "так" : "ні"}`] : []),
     "",
     ...lines,
     "",
@@ -123,6 +127,16 @@ export function createBot({ token, allowedIds, sessions, counters, sendDocument 
     }
   });
 
+  bot.callbackQuery(/^warranty:(yes|no)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const s = await sessions.get(ctx.from.id);
+    if (!s || s.step !== "warranty") return;
+    s.warranty = ctx.match[1] === "yes";
+    s.step = "confirm";
+    await sessions.set(ctx.from.id, s);
+    await ctx.reply(summary(s), { reply_markup: confirmMenu() });
+  });
+
   bot.callbackQuery("gen", async (ctx) => {
     await ctx.answerCallbackQuery();
     const s = await sessions.get(ctx.from.id);
@@ -135,7 +149,20 @@ export function createBot({ token, allowedIds, sessions, counters, sendDocument 
     const data: DocData = { fop, number, date, items: priceItems(s.items, s.rate) };
     const buffer = s.docType === "invoice" ? await generateInvoice(data) : await generateWaybill(data);
     const filename = `${s.docType === "invoice" ? "Рахунок на оплату" : "Видаткова накладна"} ${number} ${fop.signature.replace(/\.+$/, "")}.docx`;
-    await sendDocument(ctx.chat?.id ?? ctx.from.id, buffer, filename, `№ ${number}`);
+    const chatId = ctx.chat?.id ?? ctx.from.id;
+    await sendDocument(chatId, buffer, filename, `№ ${number}`);
+
+    if (s.docType === "waybill" && s.warranty) {
+      try {
+        const warrantyNumber = await nextDocNumber(counters, s.fopId, "warranty", date);
+        const warranty = await generateWarranty({ ...data, number: warrantyNumber });
+        await sendDocument(chatId, warranty, `Гарантійний талон ${warrantyNumber} ${fop.signature.replace(/\.+$/, "")}.docx`, `№ ${warrantyNumber}`);
+      } catch (err) {
+        console.error("Помилка гарантійного талона:", err);
+        const reason = err instanceof Error ? err.message : String(err);
+        await ctx.reply(`Накладну надіслано, але гарантійний талон не вдалося створити: ${reason.slice(0, 200)}`);
+      }
+    }
     await ctx.reply("Готово. Що далі?", { reply_markup: mainMenu() });
   });
 
@@ -172,6 +199,11 @@ export function createBot({ token, allowedIds, sessions, counters, sendDocument 
       case "rate": {
         if (priceInKop("1", text) === null) return ctx.reply("Введіть курс числом (до 4 знаків після коми), наприклад 41.5:");
         s.rate = text;
+        if (s.docType === "waybill") {
+          s.step = "warranty";
+          await sessions.set(ctx.from.id, s);
+          return ctx.reply("Генерувати гарантійний талон?", { reply_markup: warrantyMenu() });
+        }
         s.step = "confirm";
         await sessions.set(ctx.from.id, s);
         return ctx.reply(summary(s), { reply_markup: confirmMenu() });

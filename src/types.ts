@@ -1,4 +1,5 @@
 export type DocType = "invoice" | "waybill";
+export type CounterType = DocType | "warranty";
 export type FopId = "neskhodovskyi" | "drizhenko";
 
 export interface Fop {

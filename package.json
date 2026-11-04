@@ -7,7 +7,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "set-webhook": "tsx scripts/set-webhook.ts",
-    "sample": "tsx scripts/sample.ts"
+    "sample": "tsx scripts/sample.ts",
+    "build-template": "tsx scripts/build-template.ts"
   },
   "engines": {
     "node": ">=20"
@@ -15,7 +16,8 @@
   "dependencies": {
     "@upstash/redis": "^1.40.0",
     "docx": "^9.15.0",
-    "grammy": "^1.46.0"
+    "grammy": "^1.46.0",
+    "jszip": "^3.10.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

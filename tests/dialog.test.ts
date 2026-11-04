@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createBot } from "../src/bot/create.js";
 import type { Session, SessionStore } from "../src/bot/session.js";
 import { MemoryCounterStore, type CounterStore } from "../src/data/counters.js";
@@ -12,7 +12,7 @@ class MemorySessions implements SessionStore {
   async seenUpdate(id: number) { const r = this.seen.has(id); this.seen.add(id); return r; }
 }
 
-async function setup(counters: CounterStore = new MemoryCounterStore()) {
+async function setup(counters: CounterStore = new MemoryCounterStore(), beforeSend?: (chatId: number, file: Buffer, filename: string) => Promise<void>) {
   const calls: { method: string; payload: any }[] = [];
   const bot = createBot({
     token: "123:abc",
@@ -20,6 +20,7 @@ async function setup(counters: CounterStore = new MemoryCounterStore()) {
     sessions: new MemorySessions(),
     counters,
     sendDocument: async (chatId, file, filename, caption) => {
+      await beforeSend?.(chatId, file, filename);
       calls.push({ method: "sendDocument", payload: { chat_id: chatId, size: file.length, filename, caption } });
     },
   });
@@ -37,7 +38,7 @@ async function setup(counters: CounterStore = new MemoryCounterStore()) {
   return { calls, text, click, bot };
 }
 
-async function makeDoc(h: Awaited<ReturnType<typeof setup>>, kind: "invoice" | "waybill", fop: string) {
+async function makeDoc(h: Awaited<ReturnType<typeof setup>>, kind: "invoice" | "waybill", fop: string, warranty = false) {
   await h.text("/start");
   await h.click(`doc:${kind}`);
   await h.click(`fop:${fop}`);
@@ -50,6 +51,7 @@ async function makeDoc(h: Awaited<ReturnType<typeof setup>>, kind: "invoice" | "
   await h.text("1 100,50");
   await h.click("more:next");
   await h.text("41,5");
+  if (kind === "waybill") await h.click(warranty ? "warranty:yes" : "warranty:no");
   await h.click("gen");
 }
 
@@ -83,6 +85,7 @@ describe("діалог бота", () => {
     await h.click("more:next");
     await h.text("0");
     await h.text("40");
+    await h.click("warranty:no");
     await h.click("gen");
     await h.click("gen");
     const msgs = h.calls.filter((c) => c.method === "sendMessage").map((c) => c.payload.text as string);
@@ -104,6 +107,51 @@ describe("діалог бота", () => {
     const msgs = h.calls.filter((c) => c.method === "sendMessage").map((c) => c.payload.text as string);
     expect(msgs.some((m) => m.startsWith("Сталася помилка: redis недоступний"))).toBe(true);
     expect(h.calls.some((c) => c.method === "sendDocument")).toBe(false);
+  });
+
+  const docs = (h: Awaited<ReturnType<typeof setup>>) => h.calls.filter((c) => c.method === "sendDocument").map((c) => c.payload);
+  const texts = (h: Awaited<ReturnType<typeof setup>>) => h.calls.filter((c) => c.method === "sendMessage").map((c) => c.payload.text as string);
+
+  it("накладна питає про гарантійний талон, а рахунок ні", async () => {
+    const h = await setup();
+    await makeDoc(h, "invoice", "drizhenko");
+    expect(texts(h).some((t) => t.includes("гарантійний талон"))).toBe(false);
+    const w = await setup();
+    await makeDoc(w, "waybill", "drizhenko", false);
+    const ask = w.calls.find((c) => c.payload.text === "Генерувати гарантійний талон?")!;
+    expect(ask.payload.reply_markup.inline_keyboard[0].map((b: any) => b.text)).toEqual(["Так", "Ні"]);
+  });
+
+  it("відповідь «Ні» дає лише накладну", async () => {
+    const h = await setup();
+    await makeDoc(h, "waybill", "drizhenko", false);
+    expect(docs(h).map((d) => d.filename.split(" ")[0])).toEqual(["Видаткова"]);
+    expect(texts(h).some((t) => t.includes("Гарантійний талон: ні"))).toBe(true);
+  });
+
+  it("відповідь «Так» дає накладну й гарантійний талон з окремою нумерацією", async () => {
+    const h = await setup();
+    await makeDoc(h, "waybill", "drizhenko", true);
+    expect(texts(h).some((t) => t.includes("Гарантійний талон: так"))).toBe(true);
+    const [waybill, warranty] = docs(h);
+    expect(waybill.filename).toMatch(/^Видаткова накладна \d\d-\d\d-10 Дриженко Р\.В\.docx$/);
+    expect(warranty.filename).toMatch(/^Гарантійний талон \d\d-\d\d-10 Дриженко Р\.В\.docx$/);
+    expect(waybill.caption).toBe(warranty.caption);
+    expect(warranty.size).toBeGreaterThan(10_000);
+    await makeDoc(h, "waybill", "drizhenko", true);
+    const all = docs(h);
+    expect(all.map((d) => d.caption.split("-").pop())).toEqual(["10", "10", "11", "11"]);
+    await makeDoc(h, "waybill", "neskhodovskyi", true);
+    expect(docs(h).slice(4).map((d) => d.caption.split("-").pop())).toEqual(["10", "10"]);
+  });
+
+  it("якщо талон не вдалося створити, накладна вже надіслана, а користувач бачить причину", async () => {
+    const h = await setup(undefined, async (_c, _f, filename) => { if (filename.startsWith("Гарантійний")) throw new Error("диск недоступний"); });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await makeDoc(h, "waybill", "drizhenko", true);
+    expect(docs(h).map((d) => d.filename.split(" ")[0])).toEqual(["Видаткова"]);
+    expect(texts(h).some((t) => t.startsWith("Накладну надіслано, але гарантійний талон не вдалося створити: диск недоступний"))).toBe(true);
+    expect(texts(h).some((t) => t.startsWith("Готово"))).toBe(true);
   });
 
   it("не пускає сторонніх", async () => {

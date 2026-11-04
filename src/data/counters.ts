@@ -1,5 +1,5 @@
 import { Redis } from "@upstash/redis";
-import type { DocType, FopId } from "../types.js";
+import type { CounterType, FopId } from "../types.js";
 import { kyivDateParts } from "../utils/words.js";
 
 const FIRST_NUMBER = 10;
@@ -8,7 +8,7 @@ export interface CounterStore {
   next(key: string): Promise<number>;
 }
 
-function counterKey(fop: FopId, type: DocType, date: Date): string {
+function counterKey(fop: FopId, type: CounterType, date: Date): string {
   const d = kyivDateParts(date);
   return `counter:${fop}:${type}:${d.year}-${d.month}-${d.day}`;
 }
@@ -18,7 +18,7 @@ export function formatDocNumber(date: Date, seq: number): string {
   return `${d.day}-${d.month}-${seq}`;
 }
 
-export async function nextDocNumber(store: CounterStore, fop: FopId, type: DocType, date: Date): Promise<string> {
+export async function nextDocNumber(store: CounterStore, fop: FopId, type: CounterType, date: Date): Promise<string> {
   const seq = await store.next(counterKey(fop, type, date));
   return formatDocNumber(date, seq);
 }
